@@ -26,10 +26,24 @@ def initialize_database() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 text TEXT NOT NULL,
                 user TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'Новая',
+                category TEXT NOT NULL DEFAULT 'Без категории'
             )
             """
         )
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        if "status" not in columns:
+            connection.execute(
+                "ALTER TABLE tasks ADD COLUMN status TEXT NOT NULL DEFAULT 'Новая'"
+            )
+        if "category" not in columns:
+            connection.execute(
+                "ALTER TABLE tasks ADD COLUMN category TEXT NOT NULL DEFAULT 'Без категории'"
+            )
         connection.commit()
 
 
@@ -45,12 +59,12 @@ def add_task(task_text: str, user: str) -> int:
         return int(cursor.lastrowid)
 
 
-def get_tasks(user: str) -> list[tuple[int, str, str, str]]:
+def get_tasks(user: str) -> list[tuple[int, str, str, str, str, str]]:
     """Возвращает задачи конкретного пользователя в порядке добавления."""
     with sqlite3.connect(DATABASE_PATH) as connection:
         rows = connection.execute(
             """
-            SELECT id, text, user, created_at
+            SELECT id, text, user, created_at, status, category
             FROM tasks
             WHERE user = ?
             ORDER BY id
@@ -67,11 +81,11 @@ def get_user_name(message: Message) -> str:
     return str(message.from_user.id)
 
 
-def create_csv_file(tasks: list[tuple[int, str, str, str]]) -> BufferedInputFile:
+def create_csv_file(tasks: list[tuple[int, str, str, str, str, str]]) -> BufferedInputFile:
     """Создаёт CSV-файл в памяти и подготавливает его для отправки в Telegram."""
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["id", "text", "user", "created_at"])
+    writer.writerow(["id", "text", "user", "created_at", "Статус", "Категория"])
     writer.writerows(tasks)
     return BufferedInputFile(
         output.getvalue().encode("utf-8-sig"),
@@ -108,7 +122,10 @@ async def list_handler(message: Message) -> None:
         await message.answer("У вас пока нет задач.")
         return
 
-    task_lines = [f"{task_id}. {text} ({created_at})" for task_id, text, _, created_at in tasks]
+    task_lines = [
+        f"{task_id}. {text} | Статус: {status} | Категория: {category} ({created_at})"
+        for task_id, text, _, created_at, status, category in tasks
+    ]
     await message.answer("Ваши задачи:\n" + "\n".join(task_lines))
 
 
